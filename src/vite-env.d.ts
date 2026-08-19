@@ -13,9 +13,35 @@ type TronContractSend = {
 };
 
 type TronTrc20Contract = {
+  allowance: (owner: string, spender: string) => TronContractCall;
+  approve: (spender: string, amount: string) => TronContractSend;
   balanceOf: (owner: string) => TronContractCall;
   decimals: () => TronContractCall;
   transfer: (receiver: string, amount: string) => TronContractSend;
+};
+
+type SunswapRouterContract = {
+  getAmountsOut: (amountIn: string, path: string[]) => TronContractCall;
+  swapExactETHForTokens: (
+    amountOutMin: string,
+    path: string[],
+    to: string,
+    deadline: number,
+  ) => TronContractSend;
+  swapExactTokensForETH: (
+    amountIn: string,
+    amountOutMin: string,
+    path: string[],
+    to: string,
+    deadline: number,
+  ) => TronContractSend;
+  swapExactTokensForTokens: (
+    amountIn: string,
+    amountOutMin: string,
+    path: string[],
+    to: string,
+    deadline: number,
+  ) => TronContractSend;
 };
 
 type TronWebProvider = {
@@ -28,28 +54,12 @@ type TronWebProvider = {
       receiver: string,
       amountSun: number,
     ) => Promise<string | { txid?: string; transaction?: { txID?: string } }>;
-    sign: (transaction: unknown) => Promise<unknown>;
-    sendRawTransaction: (transaction: unknown) => Promise<string | { txid?: string; txID?: string; transaction?: { txID?: string } }>;
   };
-  contract: () => {
-    at: (address: string) => Promise<TronTrc20Contract>;
-  };
-  transactionBuilder: {
-    triggerSmartContract: (
-      contractAddress: string,
-      functionSelector: string,
-      options: {
-        callValue?: number;
-        feeLimit?: number;
-        input?: string;
-      },
-      parameters: unknown[],
-      issuerAddress: string,
-    ) => Promise<{
-      result?: boolean;
-      message?: string;
-      transaction?: unknown;
-    }>;
+  contract: {
+    (): {
+      at: (address: string) => Promise<TronTrc20Contract>;
+    };
+    (abi: unknown, address: string): SunswapRouterContract;
   };
 };
 
@@ -59,7 +69,6 @@ type TronLinkProvider = {
 
 interface ImportMetaEnv {
   readonly VITE_TRON_RECEIVER_ADDRESS?: string;
-  readonly VITE_TRON_SWAP_API_ENDPOINT?: string;
 }
 
 interface ImportMeta {

@@ -107,13 +107,15 @@ const translations: Record<Locale, Record<TranslationKey, string>> = {
 };
 
 const TRON_RECEIVER_ADDRESS = import.meta.env.VITE_TRON_RECEIVER_ADDRESS ?? '';
-const TRON_SWAP_API_ENDPOINT = import.meta.env.VITE_TRON_SWAP_API_ENDPOINT ?? '/api/tron/swap';
 const DEX_TOKEN_PAIRS_ENDPOINT = 'https://api.dexscreener.com/token-pairs/v1/tron';
 const DEFAULT_TOKEN_LOGO = '/token-trx.svg';
 const TRX_MINT = 'TRX';
+const WTRX_ADDRESS = 'TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR';
+const SUNSWAP_V2_ROUTER_ADDRESS = 'TNJVzGqKBWkJxJB5XYSqGAwUTV15U24pPq';
 const TRX_DECIMALS = 6;
 const TRON_FEE_LIMIT = 100_000_000;
 const REAL_SWAP_USD_LIMIT = 20;
+const SLIPPAGE_BPS = 50;
 
 const tokens: Token[] = [
   {
@@ -295,6 +297,57 @@ const searchTokenByMint = async (query: string, signal: AbortSignal): Promise<To
   return token ? [token] : [];
 };
 
+const SUNSWAP_ROUTER_ABI = [
+  {
+    name: 'getAmountsOut',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'amountIn', type: 'uint256' },
+      { name: 'path', type: 'address[]' },
+    ],
+    outputs: [{ name: 'amounts', type: 'uint256[]' }],
+  },
+  {
+    name: 'swapExactETHForTokens',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'amountOutMin', type: 'uint256' },
+      { name: 'path', type: 'address[]' },
+      { name: 'to', type: 'address' },
+      { name: 'deadline', type: 'uint256' },
+    ],
+    outputs: [{ name: 'amounts', type: 'uint256[]' }],
+  },
+  {
+    name: 'swapExactTokensForETH',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'amountIn', type: 'uint256' },
+      { name: 'amountOutMin', type: 'uint256' },
+      { name: 'path', type: 'address[]' },
+      { name: 'to', type: 'address' },
+      { name: 'deadline', type: 'uint256' },
+    ],
+    outputs: [{ name: 'amounts', type: 'uint256[]' }],
+  },
+  {
+    name: 'swapExactTokensForTokens',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'amountIn', type: 'uint256' },
+      { name: 'amountOutMin', type: 'uint256' },
+      { name: 'path', type: 'address[]' },
+      { name: 'to', type: 'address' },
+      { name: 'deadline', type: 'uint256' },
+    ],
+    outputs: [{ name: 'amounts', type: 'uint256[]' }],
+  },
+] as const;
+
 const normalizeContractResult = (value: unknown): bigint => {
   if (typeof value === 'bigint') return value;
   if (typeof value === 'number') return BigInt(Math.trunc(value));
@@ -330,6 +383,15 @@ const getTrc20Contract = async (address: string) => {
   }
 
   return tronWeb.contract().at(address);
+};
+
+const getSunswapRouterContract = () => {
+  const tronWeb = getProvider();
+  if (!tronWeb) {
+    throw new Error('未检测到 TRON 钱包。');
+  }
+
+  return tronWeb.contract(SUNSWAP_ROUTER_ABI, SUNSWAP_V2_ROUTER_ADDRESS);
 };
 
 const getTokenDecimals = async (token: Token) => {
@@ -384,46 +446,48 @@ const extractTxid = (value: unknown) => {
   return '';
 };
 
-const isTransactionLike = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value && typeof value === 'object' && !('error' in value));
+const getSwapPath = (from: Token, to: Token) => {
+  const input = from.isNative ? WTRX_ADDRESS : from.mint;
+  const output = to.isNative ? WTRX_ADDRESS : to.mint;
 
-const getTransactionField = (transaction: Record<string, unknown>, key: string) => {
-  const value = transaction[key];
-  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+  if (input === output) {
+    return [input, output];
+  }
+
+  if (input === WTRX_ADDRESS || output === WTRX_ADDRESS) {
+    return [input, output];
+  }
+
+  return [input, WTRX_ADDRESS, output];
 };
 
-const buildTronTransaction = async (transaction: Record<string, unknown>, userAddress: string) => {
-  if ('raw_data' in transaction || 'rawData' in transaction) {
-    return transaction;
+const getAmountOutMin = async (amountIn: bigint, path: string[]) => {
+  const router = getSunswapRouterContract();
+  const amounts = await router.getAmountsOut(amountIn.toString(), path).call();
+  const amountList = Array.isArray(amounts) ? amounts : Object.values(amounts as Record<string, unknown>);
+  const lastAmount = normalizeContractResult(amountList[amountList.length - 1]);
+
+  if (lastAmount <= 0n) {
+    throw new Error('SunSwap 没有可用报价。');
   }
 
-  const tronWeb = getProvider();
-  const to = getTransactionField(transaction, 'to');
-  const data = getTransactionField(transaction, 'data').replace(/^0x/, '');
-  const value = Number(getTransactionField(transaction, 'value') || 0);
-  const feeLimit = Number(getTransactionField(transaction, 'feeLimit') || getTransactionField(transaction, 'gas') || TRON_FEE_LIMIT);
+  return (lastAmount * BigInt(10000 - SLIPPAGE_BPS)) / 10000n;
+};
 
-  if (!tronWeb || !to || !data) {
-    throw new Error('OKX 返回的 TRON 交易格式无法识别。');
-  }
+const ensureTokenApproval = async (token: Token, owner: string, amount: bigint) => {
+  if (token.isNative) return '';
 
-  const result = await tronWeb.transactionBuilder.triggerSmartContract(
-    to,
-    '',
-    {
-      callValue: Number.isFinite(value) ? value : 0,
-      feeLimit: Number.isFinite(feeLimit) ? feeLimit : TRON_FEE_LIMIT,
-      input: data,
-    },
-    [],
-    userAddress,
-  );
+  const contract = await getTrc20Contract(token.mint);
+  const allowance = normalizeContractResult(await contract.allowance(owner, SUNSWAP_V2_ROUTER_ADDRESS).call());
+  if (allowance >= amount) return '';
 
-  if (!result?.transaction) {
-    throw new Error(result?.message || 'TRON 交易构建失败。');
-  }
+  const result = await contract.approve(SUNSWAP_V2_ROUTER_ADDRESS, amount.toString()).send({
+    callValue: 0,
+    feeLimit: TRON_FEE_LIMIT,
+    shouldPollResponse: false,
+  });
 
-  return result.transaction;
+  return extractTxid(result);
 };
 
 function TokenButton({ token, onClick }: { token: Token; onClick: () => void }) {
@@ -652,63 +716,65 @@ function App() {
       throw new Error('请先连接 TRON 钱包。');
     }
 
-    if (!TRON_SWAP_API_ENDPOINT) {
-      throw new Error('请先配置 TRON 真实兑换测试接口 VITE_TRON_SWAP_API_ENDPOINT。');
-    }
-
     const decimals = await getTokenDecimals(fromToken);
     const rawAmount = parseTokenAmount(amount, decimals);
     if (rawAmount <= 0n) {
       throw new Error('请输入有效的卖出数量。');
     }
 
-    setStatus('正在获取真实兑换测试交易...');
-    const response = await fetch(TRON_SWAP_API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        fromToken: fromToken.mint,
-        toToken: toToken.mint,
-        amount: rawAmount.toString(),
-        amountUi: amount,
-        decimals,
-        userAddress: walletAddress,
-        slippageBps: 50,
-      }),
-    });
+    const router = getSunswapRouterContract();
+    const path = getSwapPath(fromToken, toToken);
+    const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
 
-    if (!response.ok) {
-      throw new Error(`真实兑换测试接口失败：${response.status}`);
+    setStatus('正在从 SunSwap 获取报价...');
+    const amountOutMin = await getAmountOutMin(rawAmount, path);
+
+    const approvalTxid = await ensureTokenApproval(fromToken, walletAddress, rawAmount);
+    if (approvalTxid) {
+      setStatus('授权已提交，正在发起真实兑换...');
+    } else {
+      setStatus('正在唤起钱包签名...');
     }
 
-    const data = await response.json() as {
-      approveTransaction?: unknown;
-      txid?: string;
-      transaction?: unknown;
-      transactionRequest?: unknown;
-    };
-
-    if (data.txid) {
-      return data.txid;
+    let result: string | { txid?: string; transaction?: { txID?: string } };
+    if (fromToken.isNative) {
+      result = await router.swapExactETHForTokens(
+        amountOutMin.toString(),
+        path,
+        walletAddress,
+        deadline,
+      ).send({
+        callValue: Number(rawAmount),
+        feeLimit: TRON_FEE_LIMIT,
+        shouldPollResponse: false,
+      });
+    } else if (toToken.isNative) {
+      result = await router.swapExactTokensForETH(
+        rawAmount.toString(),
+        amountOutMin.toString(),
+        path,
+        walletAddress,
+        deadline,
+      ).send({
+        callValue: 0,
+        feeLimit: TRON_FEE_LIMIT,
+        shouldPollResponse: false,
+      });
+    } else {
+      result = await router.swapExactTokensForTokens(
+        rawAmount.toString(),
+        amountOutMin.toString(),
+        path,
+        walletAddress,
+        deadline,
+      ).send({
+        callValue: 0,
+        feeLimit: TRON_FEE_LIMIT,
+        shouldPollResponse: false,
+      });
     }
 
-    const transactions = [data.approveTransaction, data.transaction ?? data.transactionRequest].filter(isTransactionLike);
-    if (!transactions.length) {
-      throw new Error('真实兑换测试接口没有返回交易。');
-    }
-
-    setStatus('正在唤起钱包签名...');
-    let latestTxid = '';
-    for (const transaction of transactions) {
-      const unsignedTransaction = await buildTronTransaction(transaction, walletAddress);
-      const signedTransaction = await tronWeb.trx.sign(unsignedTransaction);
-      const result = await tronWeb.trx.sendRawTransaction(signedTransaction);
-      latestTxid = extractTxid(result);
-    }
-
-    return latestTxid;
+    return extractTxid(result);
   };
 
   const handleExchange = async () => {
