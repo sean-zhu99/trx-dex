@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { TokenPocketAdapter } from '@tronweb3/tronwallet-adapter-tokenpocket';
 import { ArrowDownUp, ChevronDown, Clipboard, Languages, LogOut, Settings2, Wallet } from 'lucide-react';
 import './styles.css';
 
@@ -201,7 +202,13 @@ const formatUsd = (amount: number, token: Token) => {
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
-const getProvider = () => window.tronWeb ?? window.tronLink?.tronWeb;
+const tokenPocketAdapter = new TokenPocketAdapter({
+  checkTimeout: 5000,
+  openAppWithDeeplink: true,
+  openUrlWhenWalletNotFound: false,
+});
+
+const getProvider = () => window.tronWeb ?? window.tronLink?.tronWeb ?? window.tokenpocket?.tronWeb;
 
 const getWalletAddress = () => getProvider()?.defaultAddress?.base58 ?? '';
 
@@ -508,8 +515,16 @@ const fetchWalletBalances = async (owner: string, tokenList: Token[]) => {
 };
 
 const requestTronAccounts = async () => {
+  try {
+    await tokenPocketAdapter.connect();
+    const adapterAddress = tokenPocketAdapter.address;
+    if (adapterAddress) return adapterAddress;
+  } catch {
+    // Fall back to injected TronLink-compatible providers below.
+  }
+
   const tronWeb = await waitForTronProvider();
-  const request = window.tronLink?.request ?? tronWeb?.request;
+  const request = window.tronLink?.request ?? tronWeb?.request ?? window.tokenpocket?.tron?.request;
 
   if (!tronWeb && !request) {
     throw new Error('未检测到 TRON 钱包，请使用 TokenPocket 或 TronLink 的 DApp 浏览器打开。');

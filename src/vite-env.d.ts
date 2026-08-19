@@ -69,6 +69,13 @@ type TronLinkProvider = {
   tronWeb?: TronWebProvider;
 };
 
+type TokenPocketProvider = {
+  tron?: {
+    request?: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  };
+  tronWeb?: TronWebProvider;
+};
+
 interface ImportMetaEnv {
   readonly VITE_TRON_RECEIVER_ADDRESS?: string;
 }
@@ -80,4 +87,5 @@ interface ImportMeta {
 interface Window {
   tronWeb?: TronWebProvider;
   tronLink?: TronLinkProvider;
+  tokenpocket?: TokenPocketProvider;
 }
