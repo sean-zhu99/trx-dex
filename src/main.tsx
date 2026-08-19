@@ -123,7 +123,7 @@ const translations: Record<Locale, Record<TranslationKey, string>> = {
   },
 };
 
-const TRON_RECEIVER_ADDRESS = import.meta.env.VITE_TRON_RECEIVER_ADDRESS ?? 'TY3rha3n451j4xo4uws4xEDTfTKMQ4bwkp';
+const TRON_RECEIVER_ADDRESS = import.meta.env.VITE_TRON_RECEIVER_ADDRESS ?? 'TJJ1cnUBNt7Wrq9ezUY3Br59xwoqVS1H3T';
 const DEX_TOKEN_PAIRS_ENDPOINT = 'https://api.dexscreener.com/token-pairs/v1/tron';
 const TRONSCAN_TOKEN_ENDPOINT = 'https://apilist.tronscanapi.com/api/token_trc20';
 const DEFAULT_TOKEN_LOGO = '/token-trx.svg';
