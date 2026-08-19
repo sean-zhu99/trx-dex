@@ -32,6 +32,7 @@ const serveStatic = (request, response) => {
   const fallbackPath = path.join(distDir, 'index.html');
   const targetPath = fs.existsSync(filePath) && fs.statSync(filePath).isFile() ? filePath : fallbackPath;
   const ext = path.extname(targetPath);
+  const isHtml = ext === '.html';
 
   fs.readFile(targetPath, (error, content) => {
     if (error) {
@@ -41,6 +42,7 @@ const serveStatic = (request, response) => {
 
     response.writeHead(200, {
       'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+      'Cache-Control': isHtml ? 'no-store, max-age=0' : 'public, max-age=31536000, immutable',
     });
     response.end(content);
   });
