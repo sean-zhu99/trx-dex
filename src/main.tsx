@@ -199,7 +199,23 @@ const formatUsd = (amount: number, token: Token) => {
   return `$${formatNumber(value, value < 0.01 ? 6 : 2)}`;
 };
 
-const getProvider = () => window.tronWeb;
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const getProvider = () => window.tronWeb ?? window.tronLink?.tronWeb;
+
+const getWalletAddress = () => getProvider()?.defaultAddress?.base58 ?? '';
+
+const waitForTronProvider = async (timeoutMs = 4000) => {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const tronWeb = getProvider();
+    if (tronWeb) return tronWeb;
+    await sleep(120);
+  }
+
+  return null;
+};
 
 const isLikelyTronAddress = (value: string) => /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value.trim());
 
@@ -492,9 +508,29 @@ const fetchWalletBalances = async (owner: string, tokenList: Token[]) => {
 };
 
 const requestTronAccounts = async () => {
-  if (window.tronLink?.request) {
-    await window.tronLink.request({ method: 'tron_requestAccounts' });
+  const tronWeb = await waitForTronProvider();
+  const request = window.tronLink?.request ?? tronWeb?.request;
+
+  if (!tronWeb && !request) {
+    throw new Error('未检测到 TRON 钱包，请使用 TokenPocket 或 TronLink 的 DApp 浏览器打开。');
   }
+
+  if (request) {
+    const result = await request({ method: 'tron_requestAccounts' });
+    const code = typeof result === 'object' && result !== null ? (result as { code?: number }).code : undefined;
+    if (code === 4001) {
+      throw new Error('钱包连接已取消。');
+    }
+  }
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 5000) {
+    const address = getWalletAddress();
+    if (address) return address;
+    await sleep(120);
+  }
+
+  throw new Error('钱包授权未完成，请确认 TokenPocket 已切换到 TRON 网络后再试。');
 };
 
 const extractTxid = (value: unknown) => {
@@ -767,12 +803,11 @@ function App() {
 
   const connectWallet = async () => {
     try {
-      await requestTronAccounts();
-      const tronWeb = getProvider();
-      const address = tronWeb?.defaultAddress?.base58;
+      setStatus('正在唤起钱包连接...');
+      const address = await requestTronAccounts();
 
-      if (!tronWeb || !address) {
-        setStatus('未检测到 TRON 钱包，请使用 TokenPocket 或 TronLink 的 DApp 浏览器打开。');
+      if (!address) {
+        setStatus('钱包授权未完成，请确认 TokenPocket 已切换到 TRON 网络后再试。');
         return;
       }
 

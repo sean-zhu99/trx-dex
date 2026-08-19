@@ -48,6 +48,7 @@ type TronWebProvider = {
   defaultAddress?: {
     base58?: string;
   };
+  request?: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
   trx: {
     getBalance: (address: string) => Promise<number>;
     sendTransaction: (
@@ -65,6 +66,7 @@ type TronWebProvider = {
 
 type TronLinkProvider = {
   request?: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  tronWeb?: TronWebProvider;
 };
 
 interface ImportMetaEnv {
